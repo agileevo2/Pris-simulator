@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prismodell – Scenario-simulator (0–5 år)</title>
+  <style>
+    :root{ --bg:#0b1020; --panel:#121a35; --muted:#7d8ab2; --text:#f6f8ff; --accent:#8ab4ff; --card:#0f162c; --border:#1f2a52; }
+    body{margin:0;background:linear-gradient(180deg, var(--bg), #0c1328 60%);color:#f6f8ff;font:14px/1.5 system-ui,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
+    .wrap{max-width:1400px;margin:32px auto;padding:0 16px}
+    h1{margin:0 0 8px;font-size:22px}
+    .tabs{display:flex;gap:8px;margin:10px 0 16px 0;align-items:center;flex-wrap:wrap}
+    .tabbtn{background:transparent;border:1px solid var(--border);color:#dfe6ff;padding:6px 10px;border-radius:6px;cursor:pointer}
+    .tabbtn.active{background:var(--accent);color:#001330;border-color:transparent}
+    .tab{display:none}
+    .tab.active{display:block}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px}
+    .panel h2{margin:0 0 6px;font-size:16px;display:flex;align-items:center;justify-content:space-between}
+    .grid{display:grid;grid-template-columns:360px 1fr;gap:12px}
+    @media (max-width:1100px){.grid{grid-template-columns:1fr}}
+    .controls{display:grid;gap:10px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}
+    .row label{font-weight:600}
+    .row small{color:var(--muted)}
+    .row .val{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+    input[type=range]{width:100%}
+    output{min-width:90px;display:inline-block;text-align:right}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border:1px solid var(--border);padding:4px 6px}
+    th{background:#1a2446;position:sticky;top:0}
+    input[type=number], input[type=text], select{background:#0b1226;color:#f6f8ff;border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:12px}
+    input[type=number]{width:80px}
+    select{min-width:180px}
+    .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px}
+    .card h3{margin:0 0 4px;font-size:14px}
+    .card canvas{height:240px !important}
+    .spacer{flex:1}
+    .addbtn{border:1px dashed var(--border);padding:6px 10px;border-radius:6px;background:transparent;color:#dfe6ff;cursor:pointer}
+    .addbtn:disabled{opacity:.5;cursor:not-allowed}
+    .danger{border:1px solid #793a3a;color:#ffdede;background:#3a1010;padding:4px 8px;border-radius:6px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Prismodell – scenariosimulator</h1>
+    <div class="tabs" id="tabs">
+      <button class="tabbtn" data-tab="sales">Salg/forecast</button>
+      <button class="tabbtn active" data-tab="scenario-1">Scenario 1</button>
+      <button class="tabbtn" data-tab="analysis">Analyse</button>
+      <span class="spacer"></span>
+      <button id="addScenario" class="addbtn" title="Legg til scenario">+ Legg til scenario</button>
+    </div>
+
+    <!-- SALES TAB -->
+    <div id="sales" class="tab">
+      <section class="panel">
+        <h2>Generator for salgs- og avbestillingsplan</h2>
+        <div class="controls">
+          <div class="row">
+            <div>
+              <label for="targetCol">Kolonne</label>
+              <small>Velg hvilken kolonne som skal fylles</small>
+            </div>
+            <div class="val">
+              <select id="targetCol">
+                <option value="new">Nye kunder</option>
+                <option value="canc">Avbestillinger</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="genMethod">Metode</label>
+              <small>Velg modell</small>
+            </div>
+            <div class="val">
+              <select id="genMethod">
+                <option value="manual">Manuell (ingen endring)</option>
+                <option value="linear">Lineær</option>
+                <option value="exp">Eksponentiell (%/mnd)</option>
+                <option value="logistic">S-kurve (logistisk)</option>
+                <option value="seasonal">Sesong (trend + sinus)</option>
+                <option value="pulse">Kampanje/puls</option>
+                <option value="noise">Støy rundt trend</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row gen-params" data-for="linear" style="display:none">
+            <div>
+              <label>Lineær</label>
+              <small>Start → slutt over horisont</small>
+            </div>
+            <div class="val" style="gap:8px;flex-wrap:wrap">
+              <input id="linStart" type="number" value="3" step="1" />
+              <input id="linEnd" type="number" value="10" step="1" />
+            </div>
+          </div>
+
+          <div class="row gen-params" data-for="exp" style="display:none">
+            <div>
+              <label>Eksponentiell</label>
+              <small>Startverdi og % vekst pr mnd</small>
+            </div>
+            <div class="val" style="gap:8px;flex-wrap:wrap">
+              <input id="expStart" type="number" value="3" step="1" />
+              <input id="expRate" type="number" value="10" step="1" />
+              <span>%/mnd</span>
+            </div>
+          </div>
+
+          <div class="row gen-params" data-for="logistic" style="display:none">
+            <div>
+              <label>S-kurve</label>
+              <small>Metning (K), vekst (r), midtpunkt (m0)</small>
+            </div>
+            <div class="val" style="gap:8px;flex-wrap:wrap">
+              <input id="logK" type="number" value="100" step="1" />
+              <input id="logR" type="number" value="0.2" step="0.05" />
+              <input id="logM0" type="number" value="24" step="1" />
+            </div>
+          </div>
+
+          <div class="row gen-params" data-for="seasonal" style="display:none">
+            <div>
+              <label>Sesong</label>
+              <small>Base, trend/mnd, amplitude, periode (mnd), fase</small>
+            </div>
+            <div class="val" style="gap:8px;flex-wrap:wrap">
+              <input id="seaBase" type="number" value="5" step="1" />
+              <input id="seaTrend" type="number" value="0" step="0.5" />
+              <input id="seaAmp" type="number" value="3" step="0.5" />
+              <input id="seaPeriod" type="number" value="12" step="1" />
+              <input id="seaPhase" type="number" value="0" step="1" />
+            </div>
+          </div>
+
+          <div class="row gen-params" data-for="pulse" style="display:none">
+            <div>
+              <label>Kampanje/puls</label>
+              <small>Basis og pulser i format mnd:verdi, f.eks. 6:20,12:40</small>
+            </div>
+            <div class="val" style="gap:8px;flex-wrap:wrap">
+              <input id="pulseBase" type="number" value="0" step="1" />
+              <input id="pulseList" type="text" value="6:20,12:40" style="min-width:260px" />
+            </div>
+          </div>
+
+          <div class="row gen-params" data-for="noise" style="display:none">
+            <div>
+              <label>Støy</label>
+              <small>Base + normalfordelt støy (sd)</small>
+            </div>
+            <div class="val" style="gap:8px;flex-wrap:wrap">
+              <input id="noiseBase" type="number" value="5" step="1" />
+              <input id="noiseSd" type="number" value="2" step="0.5" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="horizon">Horisont</label>
+              <small>0–60 mnd</small>
+            </div>
+            <div class="val">
+              <input id="horizon" type="number" value="60" min="0" max="60" step="1" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Handling</label>
+              <small>Fyll tabell eller nullstill valgt kolonne</small>
+            </div>
+            <div class="val" style="gap:8px;flex-wrap:wrap">
+              <button id="applyGen">Fyll tabell</button>
+              <button id="clearGen">Nullstill</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Forhåndsvisning av modellert kurve</h2>
+        <div class="charts">
+          <div class="card"><h3>Månedlig (valgt kolonne)</h3><canvas id="chartSales"></canvas></div>
+          <div class="card"><h3>Akkumulert (valgt kolonne)</h3><canvas id="chartSalesCum"></canvas></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Salgs- og avbestillingsplan (Excel-aktig)</h2>
+        <div style="overflow:auto;max-height:500px">
+          <table id="salesTable"><thead><tr><th>Måned</th><th>Nye kunder</th><th>Avbestillinger</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ANALYSE TAB -->
+    <div id="analysis" class="tab">
+      <section class="panel">
+        <h2>Analyse – sammenlign scenarioer</h2>
+        <div class="charts">
+          <div class="card"><h3>Månedlig inntekt – alle scenarioer</h3><canvas id="analysisMonthly"></canvas></div>
+          <div class="card"><h3>Akkumulert inntekt – alle scenarioer</h3><canvas id="analysisCumulative"></canvas></div>
+        </div>
+        <small style="color:var(--muted)">Viser kun scenarioer som er opprettet (inntil 4). Alle scenarioer baseres på samme salg/forecast-tabell.</small>
+      </section>
+    </div>
+
+    <!-- SCENARIO CONTAINER; Scenario 1 genereres under -->
+    <div id="scenario-1" class="tab active"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const nf = new Intl.NumberFormat('nb-NO');
+    const cur = v => nf.format(v) + ' NOK';
+
+    // --- Debounce helpers to reduce lag ---
+    function debounce(fn, delay=60){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), delay); }; }
+
+    // Tabs behavior
+    function activateTab(id){
+      document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      const btn = [...document.querySelectorAll('.tabbtn')].find(b=>b.dataset.tab===id);
+      if(btn) btn.classList.add('active');
+      const el = document.getElementById(id);
+      if(el) el.classList.add('active');
+    }
+    document.getElementById('tabs').addEventListener('click', (e)=>{
+      if(e.target.classList.contains('tabbtn')) activateTab(e.target.dataset.tab);
+    });
+
+    // Build Sales table
+    const table=document.querySelector('#salesTable tbody');
+    function buildTable(){
+      table.innerHTML='';
+      for(let m=0;m<=60;m++){
+        const tr=document.createElement('tr');
+        const tdM=document.createElement('td');tdM.textContent=m;tr.appendChild(tdM);
+        ['new','canc'].forEach(type=>{
+          const td=document.createElement('td');
+          const inp=document.createElement('input');
+          inp.type='number';inp.value= type==='new'? 5:0;inp.dataset.month=m;inp.dataset.type=type;
+          inp.addEventListener('input', debouncedSalesChange);
+          td.appendChild(inp);tr.appendChild(td);
+        });
+        table.appendChild(tr);
+      }
+    }
+    function getColArray(type){
+      const arr=[]; document.querySelectorAll(`#salesTable input[data-type="${type}"]`).forEach(inp=>arr.push(+inp.value||0)); return arr;
+    }
+    const debouncedSalesChange = debounce(()=>{ scenarios.forEach(s=>simulate(s.id)); updateForecastCharts(); updateAnalysis(); }, 80);
+    buildTable();
+
+    // Scenario factory
+    const scenarios = []; const MAX_SCENARIOS=4;
+
+    function rangeRow(id,key,label,help,min,max,step,value,suffix){
+      return `<div class="row">
+        <div><label for="${id}-${key}">${label}</label><small>${help||''}</small></div>
+        <div class="val">
+          <input id="${id}-${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}">
+          <output id="${id}-${key}Out">${suffix? nf.format(value)+` ${suffix}`: value}</output>
+        </div>
+      </div>`
+    }
+
+    function scenarioTemplate(id){
+      return `
+      <div class="grid">
+        <section class="panel">
+          <h2>
+            Parametere – ${id.replace('scenario-','Scenario ')}
+            <button class="danger" id="${id}-remove" title="Fjern dette scenariet">Slett</button>
+          </h2>
+          <div class="controls">
+            ${rangeRow(id,'install','Oppstartskostnad','0–200 000 NOK, steg 2 500',0,200000,2500,20000,'NOK')}
+            ${rangeRow(id,'monthly','Månedsavgift','0–7 500 NOK, steg 100',0,7500,100,4000,'NOK')}
+            ${rangeRow(id,'deinstall','Demonteringsavgift','0–50 000 NOK, steg 500',0,50000,500,20000,'NOK')}
+            ${rangeRow(id,'annualDiscount','Årsrabatt','0–50 %, steg 1',0,50,1,16,'%')}
+            ${rangeRow(id,'annualShare','Andel som velger årsabonnement','0–100 %, steg 1',0,100,1,40,'%')}
+            ${rangeRow(id,'prodCost','Produksjonskostnad per enhet','0–100 000 NOK, steg 1 000',0,100000,1000,44000,'NOK')}
+            <div class="row">
+              <div>
+                <label for="${id}-useForecast">Bruk salgs/avbestillingstabell</label>
+                <small>Bruk tallene fra fanen «Salg/forecast»</small>
+              </div>
+              <div class="val">
+                <input id="${id}-useForecast" type="checkbox" checked>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="panel charts">
+          <div class="card"><h3>Månedlig inntekt (total)</h3><canvas id="${id}-cashMonthly"></canvas></div>
+          <div class="card"><h3>Akkumulert inntekt</h3><canvas id="${id}-cashCumulative"></canvas></div>
+          <div class="card"><h3>Aktive kunder</h3><canvas id="${id}-activeChart"></canvas></div>
+          <div class="card"><h3>Inntektskilder</h3><canvas id="${id}-splitChart"></canvas></div>
+          <div class="card"><h3>Break-even (ingen oppsigelse)</h3><div id="${id}-beText" style="font-weight:600"></div><div style="margin-top:6px;color:#7d8ab2;font-size:12px">Per kunde, basert på installeringsavgift, månedspris og årspris.</div></div>
+        </section>
+      </div>`;
+    }
+
+    function bindScenarioControls(id){
+      const bind = (key, fmt) =>{
+        const el = document.getElementById(`${id}-${key}`); if(!el) return;
+        const out = document.getElementById(`${id}-${key}Out`);
+        const render = ()=> out && (out.textContent = fmt? fmt(+el.value): String(el.value));
+        el.addEventListener('input', debounce(()=>{ render(); simulate(id); updateAnalysis(); }, 60));
+        render();
+      };
+      bind('install', v=> cur(v));
+      bind('monthly', v=> cur(v));
+      bind('deinstall', v=> cur(v));
+      bind('annualDiscount', v=> v+' %');
+      bind('annualShare', v=> v+' %');
+      bind('prodCost', v=> cur(v));
+      document.getElementById(`${id}-useForecast`).addEventListener('change', ()=>{ simulate(id); updateAnalysis(); });
+      document.getElementById(`${id}-remove`).addEventListener('click', ()=> removeScenario(id));
+    }
+
+    function createScenario(idx){
+      const id = `scenario-${idx}`;
+      const host = document.getElementById(id);
+      if(!host){ const div=document.createElement('div'); div.id=id; div.className='tab'; document.querySelector('.wrap').appendChild(div); }
+      document.getElementById(id).innerHTML = scenarioTemplate(id);
+      bindScenarioControls(id);
+      // charts
+      const makeChart = (ctx)=> new Chart(ctx,{ type:'line', data:{labels:[],datasets:[{label:'',data:[],tension:.25,borderWidth:2,pointRadius:0,fill:true,backgroundColor:'rgba(138,180,255,0.08)'}]}, options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{x:{min:0,max:60}, y:{beginAtZero:true}}, plugins:{legend:{display:false}} } });
+      const charts = {
+        monthly: makeChart(document.getElementById(`${id}-cashMonthly`)),
+        cumulative: makeChart(document.getElementById(`${id}-cashCumulative`)),
+        active: makeChart(document.getElementById(`${id}-activeChart`)),
+        split: new Chart(document.getElementById(`${id}-splitChart`),{type:'bar',data:{labels:['Oppstart','Demontering','Løpende (mnd+år)'],datasets:[{label:'Inntekter',data:[0,0,0]}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
+      };
+      scenarios.push({ id, charts });
+      simulate(id); updateAnalysis();
+      return id;
+    }
+
+    function removeScenario(id){
+      const idx = scenarios.findIndex(s=>s.id===id); if(idx===-1) return;
+      const ch = scenarios[idx].charts; try{ ch.monthly.destroy(); ch.cumulative.destroy(); ch.active.destroy(); ch.split.destroy(); }catch(e){}
+      scenarios.splice(idx,1);
+      const panel=document.getElementById(id); if(panel&&panel.parentNode) panel.parentNode.removeChild(panel);
+      const tabs=document.getElementById('tabs'); const btn=tabs.querySelector(`.tabbtn[data-tab="${id}"]`); if(btn) btn.remove();
+      document.getElementById('addScenario').disabled = (scenarios.length>=MAX_SCENARIOS);
+      activateTab(scenarios[0]?.id || 'sales'); updateAnalysis();
+    }
+
+    // Add Scenario button
+    const addBtn = document.getElementById('addScenario');
+    addBtn.addEventListener('click', ()=>{
+      const currentCount = scenarios.length; if(currentCount >= MAX_SCENARIOS){ addBtn.disabled=true; return; }
+      const newIdx = currentCount + 1; const btn=document.createElement('button');
+      btn.className='tabbtn'; btn.dataset.tab=`scenario-${newIdx}`; btn.textContent=`Scenario ${newIdx}`;
+      const tabs=document.getElementById('tabs'); const refNode = tabs.querySelector('.tabbtn[data-tab="analysis"]') || addBtn; tabs.insertBefore(btn, refNode);
+      const panel=document.createElement('div'); panel.id=`scenario-${newIdx}`; panel.className='tab'; document.querySelector('.wrap').appendChild(panel);
+      createScenario(newIdx); activateTab(`scenario-${newIdx}`);
+      if(newIdx>=MAX_SCENARIOS) addBtn.disabled = true;
+    });
+
+    // Forecast preview charts
+    function makeSimpleChart(ctx){ return new Chart(ctx,{ type:'line', data:{labels:[],datasets:[{label:'',data:[],tension:.25,borderWidth:2,pointRadius:0,fill:true,backgroundColor:'rgba(138,180,255,0.08)'}]}, options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{x:{min:0,max:60}, y:{beginAtZero:true}}, plugins:{legend:{display:false}} } }); }
+    const chartSales = makeSimpleChart(document.getElementById('chartSales'));
+    const chartSalesCum = makeSimpleChart(document.getElementById('chartSalesCum'));
+    function roundUpStep(x, step){ return Math.max(step, Math.ceil(x/step)*step); }
+    function updateForecastCharts(){
+      const H = Math.max(0, Math.min(60, +document.getElementById('horizon').value|0));
+      const target = document.getElementById('targetCol').value; const arr = getColArray(target).slice(0,H+1);
+      const labels = arr.map((_,i)=>i); const cum = arr.reduce((a,v,i)=>{ a.push((a[i-1]||0)+v); return a; }, []);
+      chartSales.data.labels = labels; chartSales.data.datasets[0].data = arr; chartSales.options.scales.y.max = roundUpStep(Math.max(...arr,1), 10); chartSales.update('none');
+      chartSalesCum.data.labels = labels; chartSalesCum.data.datasets[0].data = cum; chartSalesCum.options.scales.y.max = roundUpStep(Math.max(...cum,1), 10); chartSalesCum.update('none');
+    }
+
+    // Core simulation (no startkunder)
+    function simulate(id){
+      const getVal = (key)=> +document.getElementById(`${id}-${key}`).value;
+      const install=getVal('install'); const monthly=getVal('monthly'); const deinstall=getVal('deinstall');
+      const annualDiscount=getVal('annualDiscount')/100; const annualShare=getVal('annualShare')/100; const prodCost=getVal('prodCost');
+      const useForecast=document.getElementById(`${id}-useForecast`).checked;
+      const annualPrice=monthly*12*(1-annualDiscount); const labels=[...Array(61).keys()];
+      const newByMonth = useForecast ? getColArray('new') : new Array(61).fill(5);
+      const cancByMonth = useForecast ? getColArray('canc') : new Array(61).fill(0);
+
+      let activeMonthly=0; // no start customers
+      let annualCohorts=[];
+      const cashMonthlySeries=[],cashInstallSeries=[],cashDeinstallSeries=[],cashAnnualUpfrontSeries=[],activeSeries=[];
+      for(let m=0;m<=60;m++){
+        const newC=newByMonth[m]||0; const newA=newC*annualShare; const newM=newC-newA;
+        cashInstallSeries.push(newC*install);
+        if(newA>0) annualCohorts.push({size:newA,monthsLeft:12});
+        activeMonthly+=newM;
+        let canc=cancByMonth[m]||0;
+        if(canc>0){
+          const fromM=Math.min(activeMonthly,canc); activeMonthly-=fromM; canc-=fromM;
+          if(canc>0){
+            const totalA=annualCohorts.reduce((s,c)=>s+c.size,0);
+            const newList=[]; for(const c of annualCohorts){ const drop=(totalA>0? (c.size/totalA)*canc : 0); const newSize=Math.max(0,c.size-drop); if(newSize>0) newList.push({size:newSize,monthsLeft:c.monthsLeft}); }
+            annualCohorts=newList;
+          }
+          cashDeinstallSeries.push((cancByMonth[m]||0)*deinstall);
+        } else cashDeinstallSeries.push(0);
+        cashMonthlySeries.push(activeMonthly*monthly);
+        let annualUpfront=newA*annualPrice;
+        const next=[]; for(const c of annualCohorts){ if(c.monthsLeft===0){ annualUpfront+=c.size*annualPrice; next.push({size:c.size,monthsLeft:12}); } else next.push({size:c.size,monthsLeft:c.monthsLeft}); }
+        annualCohorts=next.map(c=>({...c,monthsLeft:c.monthsLeft-1}));
+        cashAnnualUpfrontSeries.push(annualUpfront);
+        const activeAnnual=annualCohorts.reduce((s,c)=>s+c.size,0);
+        activeSeries.push(activeMonthly+activeAnnual);
+      }
+
+      const totalMonthly=cashMonthlySeries.map((v,i)=>v+cashInstallSeries[i]+cashAnnualUpfrontSeries[i]+cashDeinstallSeries[i]);
+      const cumulative=totalMonthly.reduce((a,v,i)=>{a.push((a[i-1]||0)+v);return a;},[]);
+
+      const sc = scenarios.find(s=>s.id===id); if(!sc) return;
+      const {monthly:cm,cumulative:cc,active:ca,split:cs} = sc.charts;
+      const setMax=(chart, arr, step)=>{ chart.options.scales.y.max = Math.max(step, Math.ceil(Math.max(...arr,1)/step)*step); };
+      cm.data.labels=labels; cm.data.datasets[0].data=totalMonthly; setMax(cm,totalMonthly,10000); cm.update('none');
+      cc.data.labels=labels; cc.data.datasets[0].data=cumulative; setMax(cc,cumulative,10000); cc.update('none');
+      ca.data.labels=labels; ca.data.datasets[0].data=activeSeries; setMax(ca,activeSeries,10); ca.update('none');
+      const sumInstall=cashInstallSeries.reduce((a,v)=>a+v,0); const sumDeinst=cashDeinstallSeries.reduce((a,v)=>a+v,0); const sumMonthly=cashMonthlySeries.reduce((a,v)=>a+v,0)+cashAnnualUpfrontSeries.reduce((a,v)=>a+v,0);
+      cs.data.datasets[0].data=[sumInstall,sumDeinst,sumMonthly]; setMax(cs,[sumInstall,sumDeinst,sumMonthly],10000); cs.update('none');
+
+      // Break-even (per kunde) – ingen startkunder
+      const beMonthly = monthly>0 ? Math.max(0, Math.ceil((prodCost - install)/monthly)) : Infinity;
+      const beAnnual = (install + annualPrice >= prodCost) ? 0 : (monthly>0 ? Math.max(0, Math.ceil((prodCost - install - annualPrice)/monthly)) : Infinity);
+      const fmt = v => Number.isFinite(v) ? `${v} mnd` : 'ikke oppnåelig';
+      document.getElementById(`${id}-beText`).textContent = `Månedskunde: ${fmt(beMonthly)} · Årskunde: ${fmt(beAnnual)}`;
+
+      sc.series = { labels, totalMonthly, cumulative };
+    }
+
+    // Analysis charts
+    const analysisMonthly = new Chart(document.getElementById('analysisMonthly'), {type:'line', data:{labels:[...Array(61).keys()], datasets:[]}, options:{responsive:true,maintainAspectRatio:false}});
+    const analysisCumulative = new Chart(document.getElementById('analysisCumulative'), {type:'line', data:{labels:[...Array(61).keys()], datasets:[]}, options:{responsive:true,maintainAspectRatio:false}});
+    function updateAnalysis(){
+      const labels=[...Array(61).keys()];
+      analysisMonthly.data.labels=labels; analysisCumulative.data.labels=labels;
+      analysisMonthly.data.datasets = scenarios.map((s)=>({label:s.id.replace('scenario-','Scenario '), data:(s.series?.totalMonthly)||[], borderWidth:2, pointRadius:0}));
+      analysisCumulative.data.datasets = scenarios.map((s)=>({label:s.id.replace('scenario-','Scenario '), data:(s.series?.cumulative)||[], borderWidth:2, pointRadius:0}));
+      analysisMonthly.update('none'); analysisCumulative.update('none');
+    }
+
+    // Generator UI
+    const methodSel = document.getElementById('genMethod');
+    function refreshParamUI(){ document.querySelectorAll('.gen-params').forEach(el=>{ el.style.display = (el.getAttribute('data-for')===methodSel.value) ? 'grid' : 'none'; }); }
+    methodSel.addEventListener('change', refreshParamUI); refreshParamUI();
+
+    const clampH = () => Math.max(0, Math.min(60, +document.getElementById('horizon').value|0));
+    function genLinear(a,b,H){ const out=new Array(H+1).fill(0); for(let m=0;m<=H;m++){ const t=H===0?0:m/H; out[m]=a+t*(b-a);} return out; }
+    function genExp(start,ratePct,H){ const r=ratePct/100; const out=new Array(H+1).fill(0); for(let m=0;m<=H;m++){ out[m]= start*Math.pow(1+r,m);} return out; }
+    function genLogistic(K,r,m0,H){ const out=new Array(H+1).fill(0); for(let m=0;m<=H;m++){ out[m]= K/(1+Math.exp(-r*(m-m0))); } return out; }
+    function genSeasonal(base,trend,amp,period,phase,H){ const out=new Array(H+1).fill(0); for(let m=0;m<=H;m++){ out[m]= base+trend*m + amp*Math.sin(2*Math.PI*(m+phase)/period);} return out; }
+    function genPulse(base,spec,H){ const out=new Array(H+1).fill(base); const items=(spec||'').split(',').map(s=>s.trim()).filter(Boolean); for(const it of items){ const [mm,val]=it.split(':').map(x=>x.trim()); const m=parseInt(mm,10); const v=+val; if(!Number.isNaN(m)&&!Number.isNaN(v)&&m>=0&&m<=H){ out[m]+=v; } } return out; }
+    function genNoise(base,sd,H){ function randn(){let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);} const out=new Array(H+1).fill(0); for(let m=0;m<=H;m++){ out[m]=Math.max(0, base+sd*randn()); } return out; }
+
+    document.getElementById('applyGen').addEventListener('click', ()=>{
+      const target=document.getElementById('targetCol').value; const H=clampH(); const method=methodSel.value; let arr=null;
+      if(method==='linear'){ const a=+document.getElementById('linStart').value||0; const b=+document.getElementById('linEnd').value||0; arr=genLinear(a,b,H); }
+      else if(method==='exp'){ const s=+document.getElementById('expStart').value||0; const r=+document.getElementById('expRate').value||0; arr=genExp(s,r,H); }
+      else if(method==='logistic'){ const K=+document.getElementById('logK').value||0; const r=+document.getElementById('logR').value||0; const m0=+document.getElementById('logM0').value||0; arr=genLogistic(K,r,m0,H); }
+      else if(method==='seasonal'){ const base=+document.getElementById('seaBase').value||0; const trend=+document.getElementById('seaTrend').value||0; const amp=+document.getElementById('seaAmp').value||0; const period=Math.max(1,+document.getElementById('seaPeriod').value||12); const phase=+document.getElementById('seaPhase').value||0; arr=genSeasonal(base,trend,amp,period,phase,H); }
+      else if(method==='pulse'){ const base=+document.getElementById('pulseBase').value||0; const spec=document.getElementById('pulseList').value||''; arr=genPulse(base,spec,H); }
+      else if(method==='noise'){ const base=+document.getElementById('noiseBase').value||0; const sd=+document.getElementById('noiseSd').value||0; arr=genNoise(base,sd,H); }
+      if(arr){ setColArray(target, arr); }
+    });
+
+    document.getElementById('clearGen').addEventListener('click', ()=>{
+      const target=document.getElementById('targetCol').value; const H=clampH(); setColArray(target, new Array(H+1).fill(0));
+    });
+
+    function setColArray(type, arr){
+      document.querySelectorAll(`#salesTable input[data-type="${type}"]`).forEach((inp,i)=>{ if(i<arr.length) inp.value = Math.max(0, Math.round(arr[i]||0)); });
+      scenarios.forEach(s=>simulate(s.id)); updateForecastCharts(); updateAnalysis();
+    }
+
+    // Create Scenario 1
+    createScenario(1); activateTab('scenario-1'); updateForecastCharts();
+
+    // --- Simple smoke tests in console ---
+    (function tests(){ try{
+      const tabs=document.getElementById('tabs'); const c1=tabs.querySelectorAll('.tabbtn').length; addBtn.click(); addBtn.click();
+      console.assert(tabs.querySelectorAll('.tabbtn').length===c1+2,'Two new scenario buttons');
+      const last = [...tabs.querySelectorAll('.tabbtn')].filter(b=>/Scenario/.test(b.textContent)).pop();
+      const analysisBtn = tabs.querySelector('.tabbtn[data-tab="analysis"]');
+      console.assert([...tabs.children].indexOf(last) < [...tabs.children].indexOf(analysisBtn),'Scenario before Analyse');
+      document.getElementById(`${last.dataset.tab}-remove`).click();
+      console.assert(!tabs.querySelector(`.tabbtn[data-tab="${last.dataset.tab}"]`),'Removed scenario tab disappears');
+      console.log('[TEST] ok');
+    }catch(e){ console.warn('[TEST] failed', e); } })();
+  </script>
+</body>
+</html>

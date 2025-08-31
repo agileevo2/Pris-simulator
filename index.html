@@ -205,6 +205,7 @@
         <div class="charts">
           <div class="card"><h3>Månedlig inntekt – alle scenarioer</h3><canvas id="analysisMonthly"></canvas></div>
           <div class="card"><h3>Akkumulert inntekt – alle scenarioer</h3><canvas id="analysisCumulative"></canvas></div>
+          <div class="card"><h3>Inntektskilder (total) – sammenlign scenarioer</h3><canvas id="analysisSplit"></canvas></div>
         </div>
         <small style="color:var(--muted)">Viser kun scenarioer som er opprettet (inntil 4). Alle scenarioer baseres på samme salg/forecast-tabell.</small>
       </section>
@@ -219,10 +220,9 @@
     const nf = new Intl.NumberFormat('nb-NO');
     const cur = v => nf.format(v) + ' NOK';
 
-    // --- Debounce helpers to reduce lag ---
     function debounce(fn, delay=60){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), delay); }; }
 
-    // Tabs behavior
+    // Tabs
     function activateTab(id){
       document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));
       document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -235,7 +235,7 @@
       if(e.target.classList.contains('tabbtn')) activateTab(e.target.dataset.tab);
     });
 
-    // Build Sales table
+    // SALES table
     const table=document.querySelector('#salesTable tbody');
     function buildTable(){
       table.innerHTML='';
@@ -331,13 +331,35 @@
       if(!host){ const div=document.createElement('div'); div.id=id; div.className='tab'; document.querySelector('.wrap').appendChild(div); }
       document.getElementById(id).innerHTML = scenarioTemplate(id);
       bindScenarioControls(id);
-      // charts
-      const makeChart = (ctx)=> new Chart(ctx,{ type:'line', data:{labels:[],datasets:[{label:'',data:[],tension:.25,borderWidth:2,pointRadius:0,fill:true,backgroundColor:'rgba(138,180,255,0.08)'}]}, options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{x:{min:0,max:60}, y:{beginAtZero:true}}, plugins:{legend:{display:false}} } });
+      const makeLine = (ctx)=> new Chart(ctx,{ type:'line', data:{labels:[],datasets:[{label:'',data:[],tension:.25,borderWidth:2,pointRadius:0,fill:true,backgroundColor:'rgba(138,180,255,0.08)'}]}, options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{x:{min:0,max:60}, y:{beginAtZero:true}}, plugins:{legend:{display:false}} } });
       const charts = {
-        monthly: makeChart(document.getElementById(`${id}-cashMonthly`)),
-        cumulative: makeChart(document.getElementById(`${id}-cashCumulative`)),
-        active: makeChart(document.getElementById(`${id}-activeChart`)),
-        split: new Chart(document.getElementById(`${id}-splitChart`),{type:'bar',data:{labels:['Oppstart','Demontering','Løpende (mnd+år)'],datasets:[{label:'Inntekter',data:[0,0,0]}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}})
+        monthly: makeLine(document.getElementById(`${id}-cashMonthly`)),
+        cumulative: makeLine(document.getElementById(`${id}-cashCumulative`)),
+        active: makeLine(document.getElementById(`${id}-activeChart`)),
+        split: new Chart(document.getElementById(`${id}-splitChart`),{
+          type:'bar',
+          data:{
+            labels:['Oppstart','Demontering','Løpende (mnd+år)'],
+            datasets:[{
+              label:'Inntekter',
+              data:[0,0,0],
+              backgroundColor:[
+                'rgba(78,121,167,0.7)',
+                'rgba(225,87,89,0.7)',
+                'rgba(89,161,79,0.7)'
+              ],
+              borderColor:[
+                'rgba(78,121,167,1)',
+                'rgba(225,87,89,1)',
+                'rgba(89,161,79,1)'
+              ],
+              borderWidth:1,
+              categoryPercentage:0.7,
+              barPercentage:0.9
+            }]
+          },
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+        })
       };
       scenarios.push({ id, charts });
       simulate(id); updateAnalysis();
@@ -348,13 +370,13 @@
       const idx = scenarios.findIndex(s=>s.id===id); if(idx===-1) return;
       const ch = scenarios[idx].charts; try{ ch.monthly.destroy(); ch.cumulative.destroy(); ch.active.destroy(); ch.split.destroy(); }catch(e){}
       scenarios.splice(idx,1);
-      const panel=document.getElementById(id); if(panel&&panel.parentNode) panel.parentNode.removeChild(panel);
+      const panel=document.getElementById(id); if(panel) panel.remove();
       const tabs=document.getElementById('tabs'); const btn=tabs.querySelector(`.tabbtn[data-tab="${id}"]`); if(btn) btn.remove();
       document.getElementById('addScenario').disabled = (scenarios.length>=MAX_SCENARIOS);
       activateTab(scenarios[0]?.id || 'sales'); updateAnalysis();
     }
 
-    // Add Scenario button
+    // Add Scenario
     const addBtn = document.getElementById('addScenario');
     addBtn.addEventListener('click', ()=>{
       const currentCount = scenarios.length; if(currentCount >= MAX_SCENARIOS){ addBtn.disabled=true; return; }
@@ -379,7 +401,7 @@
       chartSalesCum.data.labels = labels; chartSalesCum.data.datasets[0].data = cum; chartSalesCum.options.scales.y.max = roundUpStep(Math.max(...cum,1), 10); chartSalesCum.update('none');
     }
 
-    // Core simulation (no startkunder)
+    // Simulation
     function simulate(id){
       const getVal = (key)=> +document.getElementById(`${id}-${key}`).value;
       const install=getVal('install'); const monthly=getVal('monthly'); const deinstall=getVal('deinstall');
@@ -389,7 +411,7 @@
       const newByMonth = useForecast ? getColArray('new') : new Array(61).fill(5);
       const cancByMonth = useForecast ? getColArray('canc') : new Array(61).fill(0);
 
-      let activeMonthly=0; // no start customers
+      let activeMonthly=0; // ingen startkunder
       let annualCohorts=[];
       const cashMonthlySeries=[],cashInstallSeries=[],cashDeinstallSeries=[],cashAnnualUpfrontSeries=[],activeSeries=[];
       for(let m=0;m<=60;m++){
@@ -425,27 +447,49 @@
       cm.data.labels=labels; cm.data.datasets[0].data=totalMonthly; setMax(cm,totalMonthly,10000); cm.update('none');
       cc.data.labels=labels; cc.data.datasets[0].data=cumulative; setMax(cc,cumulative,10000); cc.update('none');
       ca.data.labels=labels; ca.data.datasets[0].data=activeSeries; setMax(ca,activeSeries,10); ca.update('none');
-      const sumInstall=cashInstallSeries.reduce((a,v)=>a+v,0); const sumDeinst=cashDeinstallSeries.reduce((a,v)=>a+v,0); const sumMonthly=cashMonthlySeries.reduce((a,v)=>a+v,0)+cashAnnualUpfrontSeries.reduce((a,v)=>a+v,0);
-      cs.data.datasets[0].data=[sumInstall,sumDeinst,sumMonthly]; setMax(cs,[sumInstall,sumDeinst,sumMonthly],10000); cs.update('none');
 
-      // Break-even (per kunde) – ingen startkunder
+      // Inntektskilder totals
+      const sumInstall=cashInstallSeries.reduce((a,v)=>a+v,0);
+      const sumDeinst=cashDeinstallSeries.reduce((a,v)=>a+v,0);
+      const sumRecurring=cashMonthlySeries.reduce((a,v)=>a+v,0)+cashAnnualUpfrontSeries.reduce((a,v)=>a+v,0);
+      cs.data.labels=['Oppstart','Demontering','Løpende (mnd+år)'];
+      cs.data.datasets[0].data=[sumInstall,sumDeinst,sumRecurring];
+      cs.update('none');
+
+      // Break-even (per kunde)
       const beMonthly = monthly>0 ? Math.max(0, Math.ceil((prodCost - install)/monthly)) : Infinity;
       const beAnnual = (install + annualPrice >= prodCost) ? 0 : (monthly>0 ? Math.max(0, Math.ceil((prodCost - install - annualPrice)/monthly)) : Infinity);
       const fmt = v => Number.isFinite(v) ? `${v} mnd` : 'ikke oppnåelig';
       document.getElementById(`${id}-beText`).textContent = `Månedskunde: ${fmt(beMonthly)} · Årskunde: ${fmt(beAnnual)}`;
 
-      sc.series = { labels, totalMonthly, cumulative };
+      sc.series = { labels, totalMonthly, cumulative, splitTotals:{install:sumInstall, deinstall:sumDeinst, recurring:sumRecurring} };
     }
 
-    // Analysis charts
+    // Analyse-grafer
     const analysisMonthly = new Chart(document.getElementById('analysisMonthly'), {type:'line', data:{labels:[...Array(61).keys()], datasets:[]}, options:{responsive:true,maintainAspectRatio:false}});
     const analysisCumulative = new Chart(document.getElementById('analysisCumulative'), {type:'line', data:{labels:[...Array(61).keys()], datasets:[]}, options:{responsive:true,maintainAspectRatio:false}});
+    const analysisSplit = new Chart(document.getElementById('analysisSplit'), {type:'bar', data:{labels:[], datasets:[
+      {label:'Oppstart', data:[], backgroundColor:'rgba(78,121,167,0.7)', borderColor:'rgba(78,121,167,1)', borderWidth:1},
+      {label:'Demontering', data:[], backgroundColor:'rgba(225,87,89,0.7)', borderColor:'rgba(225,87,89,1)', borderWidth:1},
+      {label:'Løpende (mnd+år)', data:[], backgroundColor:'rgba(89,161,79,0.7)', borderColor:'rgba(89,161,79,1)', borderWidth:1}
+    ]}, options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}},plugins:{legend:{position:'bottom'}}}});
+
     function updateAnalysis(){
       const labels=[...Array(61).keys()];
       analysisMonthly.data.labels=labels; analysisCumulative.data.labels=labels;
       analysisMonthly.data.datasets = scenarios.map((s)=>({label:s.id.replace('scenario-','Scenario '), data:(s.series?.totalMonthly)||[], borderWidth:2, pointRadius:0}));
       analysisCumulative.data.datasets = scenarios.map((s)=>({label:s.id.replace('scenario-','Scenario '), data:(s.series?.cumulative)||[], borderWidth:2, pointRadius:0}));
-      analysisMonthly.update('none'); analysisCumulative.update('none');
+      const scenarioNames = scenarios.map(s=>s.id.replace('scenario-','Scenario '));
+      const installArr = scenarios.map(s=>s.series?.splitTotals?.install||0);
+      const deinstArr = scenarios.map(s=>s.series?.splitTotals?.deinstall||0);
+      const recurArr = scenarios.map(s=>s.series?.splitTotals?.recurring||0);
+      analysisSplit.data.labels = scenarioNames;
+      analysisSplit.data.datasets[0].data = installArr;
+      analysisSplit.data.datasets[1].data = deinstArr;
+      analysisSplit.data.datasets[2].data = recurArr;
+      analysisSplit.update('none');
+      analysisMonthly.update('none');
+      analysisCumulative.update('none');
     }
 
     // Generator UI
@@ -481,20 +525,8 @@
       scenarios.forEach(s=>simulate(s.id)); updateForecastCharts(); updateAnalysis();
     }
 
-    // Create Scenario 1
+    // Init
     createScenario(1); activateTab('scenario-1'); updateForecastCharts();
-
-    // --- Simple smoke tests in console ---
-    (function tests(){ try{
-      const tabs=document.getElementById('tabs'); const c1=tabs.querySelectorAll('.tabbtn').length; addBtn.click(); addBtn.click();
-      console.assert(tabs.querySelectorAll('.tabbtn').length===c1+2,'Two new scenario buttons');
-      const last = [...tabs.querySelectorAll('.tabbtn')].filter(b=>/Scenario/.test(b.textContent)).pop();
-      const analysisBtn = tabs.querySelector('.tabbtn[data-tab="analysis"]');
-      console.assert([...tabs.children].indexOf(last) < [...tabs.children].indexOf(analysisBtn),'Scenario before Analyse');
-      document.getElementById(`${last.dataset.tab}-remove`).click();
-      console.assert(!tabs.querySelector(`.tabbtn[data-tab="${last.dataset.tab}"]`),'Removed scenario tab disappears');
-      console.log('[TEST] ok');
-    }catch(e){ console.warn('[TEST] failed', e); } })();
   </script>
 </body>
 </html>
